@@ -1,32 +1,34 @@
 """
-Assistant package exports
+Assistant package exports with lazy imports to avoid circular dependencies.
 """
 
-# Speech handler - use SimpleSpeech as SpeechHandler
-from .simple_speech import SimpleSpeech as SpeechHandler
-
-# Core AI functionality
-from .core import AICore
-
-# Local AI fallback
-from .local_ai import LocalAI
-
-# Skills module (create it if empty)
+# Core components that can be imported safely
 try:
-    from .skills import Skills
+    from .core import AICore
 except ImportError:
-    # Create a basic Skills class if file is missing
-    class Skills:
-        def __init__(self):
-            pass
-        def get_time_date(self):
-            from datetime import datetime
-            return datetime.now().strftime("It's %I:%M %p on %A, %B %d, %Y")
+    AICore = None
 
-# Export all
+try:
+    from .simple_speech import SimpleSpeech as SpeechHandler
+except ImportError:
+    SpeechHandler = None
+
+# Plugin system - always available
+from .plugin_base import AssistantPlugin
+from .plugin_registry import PluginRegistry
+
+# Lazy import for Skills class
+def get_skills_class():
+    try:
+        from .skills import Skills
+        return Skills
+    except ImportError:
+        return None
+
 __all__ = [
-    'SpeechHandler',
+    'AssistantPlugin', 
+    'PluginRegistry',
     'AICore',
-    'LocalAI',
-    'Skills'
+    'SpeechHandler',
+    'get_skills_class'
 ]
