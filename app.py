@@ -108,10 +108,16 @@ class PersonalAssistant:
             try:
                 from assistant import SpeechHandler
                 self.speech = SpeechHandler()
-                print("Voice mode activated (text-to-speech only)")
+                print("Voice mode activated")
+                # Test if microphone is available
+                test_input = self.speech.listen()
+                if test_input is None:
+                    print("Voice input not available, falling back to text mode")
+                    self.mode = "text"
             except Exception as e:
                 print(f"Voice initialization failed: {e}")
                 self.mode = "text"
+                self.speech = None
         else:
             self.speech = None
         
@@ -122,42 +128,79 @@ class PersonalAssistant:
         print("-"*50)
     
     def run_text_mode(self):
-        while True:
+        if self.mode == "voice" and self.speech:
+            print("Starting voice assistant in simulation mode...")
+            print("You can type commands as if speaking to the assistant")
+            print("The assistant will respond with voice output")
+            print("-" * 50)
+            
+            # Start continuous listening
+            self.speech.start_continuous_listen(
+                callback=self.handle_voice_command,
+                wake_word="jarvis"
+            )
+            
+            # Keep the main thread alive
             try:
-                user_input = input("\nYou: ").strip()
-                
-                if user_input.lower() == 'exit':
-                    print("Goodbye!")
-                    break
-                elif user_input.lower() == 'help':
-                    self.show_help()
-                    continue
-                elif user_input.lower() == 'clear':
-                    if hasattr(self.ai_core, 'clear_history'):
-                        self.ai_core.clear_history()
-                    print("History cleared from memory.")
-                    continue
-                elif user_input.lower() == 'stats':
-                    self.show_stats()
-                    continue
-                elif user_input.lower() == 'sessions':
-                    self.show_recent_sessions()
-                    continue
-                elif user_input.lower() == 'plugins':
-                    self.show_plugins()
-                    continue
-                
-                response = self.ai_core.process_command(user_input)
-                print(f"Assistant: {response}")
-                
-                if self.mode == "voice" and self.speech:
-                    self.speech.speak(response)
-                    
+                while self.speech.listening:
+                    import time
+                    time.sleep(0.1)
             except KeyboardInterrupt:
                 print("\n\nGoodbye!")
-                break
-            except Exception as e:
-                print(f"Error: {str(e)}")
+                if self.speech:
+                    self.speech.stop_listening()
+        else:
+            # Original text mode code
+            while True:
+                try:
+                    user_input = input("\nYou: ").strip()
+                    
+                    if user_input.lower() == 'exit':
+                        print("Goodbye!")
+                        break
+                    elif user_input.lower() == 'help':
+                        self.show_help()
+                        continue
+                    elif user_input.lower() == 'clear':
+                        if hasattr(self.ai_core, 'clear_history'):
+                            self.ai_core.clear_history()
+                        print("History cleared from memory.")
+                        continue
+                    elif user_input.lower() == 'stats':
+                        self.show_stats()
+                        continue
+                    elif user_input.lower() == 'sessions':
+                        self.show_recent_sessions()
+                        continue
+                    elif user_input.lower() == 'plugins':
+                        self.show_plugins()
+                        continue
+                    
+                    response = self.ai_core.process_command(user_input)
+                    print(f"Assistant: {response}")
+                    
+                    if self.mode == "voice" and self.speech:
+                        self.speech.speak(response)
+                        
+                except KeyboardInterrupt:
+                    print("\n\nGoodbye!")
+                    break
+                except Exception as e:
+                    print(f"Error: {str(e)}")
+
+    def handle_voice_command(self, command):
+        """Handle commands from voice input"""
+        print(f"\nProcessing: {command}")
+        
+        # Remove wake word if present at beginning
+        if command.lower().startswith("jarvis"):
+            command = command[6:].strip()  # Remove "jarvis" from beginning
+        
+        response = self.ai_core.process_command(command)
+        print(f"Assistant: {response}")
+        
+        if self.speech:
+            self.speech.speak(response)
     
     def show_stats(self):
         if not self.database:
@@ -239,8 +282,21 @@ class PersonalAssistant:
         print("-"*40)
 
 def main():
-    if len(sys.argv) > 1 and sys.argv[1] == "--voice":
-        mode = "voice"
+    if len(sys.argv) > 1:
+        if sys.argv[1] == "--voice":
+            mode = "voice"
+        elif sys.argv[1] == "--text":
+            mode = "text"
+        elif sys.argv[1] == "--help":
+            print("Usage:")
+            print("  python app.py              # Text mode")
+            print("  python app.py --text      # Text mode")
+            print("  python app.py --voice     # Voice mode with wake word 'jarvis'")
+            sys.exit(0)
+        else:
+            print(f"Unknown argument: {sys.argv[1]}")
+            print("Using text mode")
+            mode = "text"
     else:
         mode = "text"
     

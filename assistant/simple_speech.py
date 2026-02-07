@@ -1,8 +1,4 @@
-"""
-Simple text-to-speech module that doesn't require numpy or pyaudio
-Uses Windows built-in SAPI for TTS
-"""
-
+# assistant/simple_speech.py
 import subprocess
 import tempfile
 import os
@@ -11,12 +7,15 @@ import threading
 class SimpleSpeech:
     def __init__(self):
         self.is_windows = os.name == 'nt'
+        self.listening = False
         
-    def speak(self, text: str):
-        """Simple text-to-speech using Windows SAPI"""
+    def speak(self, text):
+        """Text-to-speech output"""
         if not self.is_windows:
-            print(f"[TTS]: {text}")
+            print(f"[Assistant]: {text}")
             return
+        
+        # Windows SAPI TTS (your existing code - works)
         def _speak():
             try:
                 script = f'''
@@ -29,7 +28,6 @@ speech.Speak "{text.replace('"', '')}"
                     temp_file = f.name
 
                 subprocess.run(['cscript', '//Nologo', temp_file], capture_output=True)
-
                 os.unlink(temp_file)
                 
             except Exception as e:
@@ -39,7 +37,51 @@ speech.Speak "{text.replace('"', '')}"
         thread = threading.Thread(target=_speak)
         thread.start()
     
-    def listen(self) -> str:
-        """Simple input - returns empty string since we don't have microphone"""
-        print("Microphone not available. Using text input only.")
-        return ""
+    def listen(self):
+        """Listen for input - text mode for now"""
+        return input("You: ")
+    
+    def start_continuous_listen(self, callback, wake_word="jarvis"):
+        """Start continuous 'listening' - actually text input"""
+        self.listening = True
+        
+        print("\n" + "="*50)
+        print("VOICE MODE ACTIVATED (Text Input Simulation)")
+        print("="*50)
+        print(f"Type commands as if you're speaking to '{wake_word}'")
+        print(f"Example: '{wake_word} what time is it'")
+        print("Commands will be processed with voice-like responses")
+        print("Type 'exit voice' to return to normal mode")
+        print("-"*50)
+        
+        def input_loop():
+            while self.listening:
+                try:
+                    user_input = input(f"\nSay something to {wake_word}: ").strip()
+                    
+                    if not user_input:
+                        continue
+                    
+                    # Check for exit command
+                    if user_input.lower() == 'exit voice':
+                        print("Exiting voice mode...")
+                        self.listening = False
+                        break
+                    
+                    # Process the command
+                    callback(user_input)
+                    
+                except KeyboardInterrupt:
+                    print("\nExiting voice mode...")
+                    self.listening = False
+                    break
+                except Exception as e:
+                    print(f"Error: {e}")
+        
+        # Run in background thread
+        thread = threading.Thread(target=input_loop, daemon=True)
+        thread.start()
+    
+    def stop_listening(self):
+        """Stop continuous listening"""
+        self.listening = False

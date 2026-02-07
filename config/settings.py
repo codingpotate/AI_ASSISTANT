@@ -1,3 +1,4 @@
+# config/settings.py
 import os
 from dotenv import load_dotenv
 
@@ -14,6 +15,8 @@ class Settings:
     DEFAULT_CITY = "London"
     DEFAULT_NEWS_CATEGORY = "technology"
     GEMINI_MODEL = "gemini-pro"
+    
+    # FIXED: Remove {tool_list} placeholder since we're not using it yet
     SYSTEM_PROMPT = """You are Jarvis, an intelligent AI assistant with access to tools. You have a distinct personality: concise, professional, slightly witty, and adaptive.
 
     IMPORTANT GUIDELINES:
@@ -28,12 +31,9 @@ class Settings:
     - Subsequent interactions: Build on established context
     - If user gives information (like a name): Acknowledge naturally once, then use it appropriately
 
-    AVAILABLE TOOLS: {tool_list}
-
     CURRENT CONTEXT:
     - Current time: {current_time}
     - Location: {user_location}
-    - Previous conversation summary: {conversation_summary}
     """
     
     @classmethod
@@ -41,6 +41,7 @@ class Settings:
         from datetime import datetime
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         user_location = cls.DEFAULT_CITY
+        # FIXED: Only pass the variables we actually have
         return cls.SYSTEM_PROMPT.format(
             current_time=current_time,
             user_location=user_location
