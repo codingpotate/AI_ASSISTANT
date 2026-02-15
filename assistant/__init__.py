@@ -9,14 +9,9 @@ except ImportError:
     AICore = None
 
 try:
-    from .simple_speech import SimpleSpeech as SpeechHandler
+    from .voice import VoiceTextOnly as SpeechHandler
 except ImportError:
     SpeechHandler = None
-
-try:
-    from .voice_recognizer import VoiceRecognizer
-except ImportError:
-    VoiceRecognizer = None
 
 # Plugin system - always available
 from .plugin_base import AssistantPlugin

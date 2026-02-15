@@ -1,6 +1,5 @@
 import json
 import os
-import uuid
 import hashlib
 import getpass
 from datetime import datetime
@@ -11,13 +10,12 @@ from config.settings import Settings
 from assistant.database import Database
 
 class AICore:
-    def __init__(self, plugin_registry=None, user_identifier=None):
-        # Generate persistent session ID based on user
-        if user_identifier:
-            # Use provided identifier
+    def __init__(self, plugin_registry=None, user_identifier=None, skills=None, session_id=None):
+        if session_id:
+            self.session_id = session_id
+        elif user_identifier:
             self.session_id = hashlib.md5(user_identifier.encode()).hexdigest()[:16]
         else:
-            # Fallback to username-based ID
             username = getpass.getuser()
             self.session_id = f"user_{hashlib.md5(username.encode()).hexdigest()[:8]}"
         
@@ -27,6 +25,7 @@ class AICore:
         self.max_history_length = 20
         self.plugin_registry = plugin_registry
         self.database = Database()
+        self.skills = skills
         
         load_dotenv()
         
@@ -65,6 +64,17 @@ class AICore:
         
         self.conversation_history.append({"role": "user", "content": text})
         
+        reminder_response = self._process_reminder_directly(text)
+        if reminder_response:
+            self.database.save_conversation(
+                session_id=self.session_id,
+                role="assistant",
+                content=reminder_response,
+                plugin_used="reminder"
+            )
+            self._update_history(text, reminder_response)
+            return reminder_response
+        
         try:
             if self.use_gemini and self.client:
                 return self._process_with_gemini(text)
@@ -79,8 +89,86 @@ class AICore:
                 content=error_msg,
                 plugin_used="error"
             )
+            self._update_history(text, error_msg)
             return error_msg
     
+
+    def _process_reminder_directly(self, text: str):
+        text_lower = text.lower()
+        
+        reminder_keywords = ['remind', 'reminder', 'alarm', 'notify', 'remember']
+        check_keywords = ['check', 'what', 'show', 'list', 'get']
+        set_keywords = ['set', 'create', 'add', 'make']
+        
+        has_reminder_word = any(word in text_lower for word in reminder_keywords)
+        
+        if not has_reminder_word:
+            return None
+        
+        if not self.skills:
+            return "Reminder system not available. Skills module not loaded."
+        
+        has_check_word = any(word in text_lower for word in check_keywords)
+        
+        if has_check_word:
+            return self.skills.check_reminders()
+        
+        # Parse reminder text and time
+        import re
+        
+        # Clean common patterns
+        cleaned_text = text_lower
+        
+        # Remove common prefixes
+        prefixes = ['remind me to', 'set reminder for', 'create reminder for', 
+                    'remind me', 'set reminder', 'create reminder', 'add reminder']
+        
+        for prefix in prefixes:
+            if cleaned_text.startswith(prefix):
+                cleaned_text = cleaned_text[len(prefix):].strip()
+                break
+        
+        if cleaned_text.startswith('to '):
+            cleaned_text = cleaned_text[3:].strip()
+        
+
+        time_patterns = [
+            r'(?:in|at|on|for)\s+(.+)',  # "in 2 hours", "at 4pm", "on monday"
+            r'(.+?)\s+(?:in|at|on|for)\s+(.+)',  # "call mom in 2 hours"
+        ]
+        
+        reminder_text = ""
+        when = ""
+        
+        for pattern in time_patterns:
+            match = re.search(pattern, cleaned_text)
+            if match:
+                if len(match.groups()) == 1:
+                    when = match.group(1).strip()
+                    time_expr = match.group(0)
+                    reminder_text = cleaned_text.replace(time_expr, '').strip()
+                else:
+                    reminder_text = match.group(1).strip()
+                    when = match.group(2).strip()
+                break
+        
+        if not when:
+            duration_pattern = r'(\d+\s+(?:minutes?|hours?|days?|weeks?))'
+            match = re.search(duration_pattern, cleaned_text)
+            if match:
+                when = match.group(0).strip()
+                reminder_text = cleaned_text.replace(when, '').strip()
+        
+        if reminder_text:
+            reminder_text = re.sub(r'\s+(?:to|for)$', '', reminder_text)
+        
+        if reminder_text and when:
+            if re.match(r'\d+\s+(?:minutes?|hours?|days?|weeks?)', when) and not when.startswith('in '):
+                when = 'in ' + when
+            
+            return self.skills.set_reminder(reminder_text, when)
+        
+        return "Please specify what to remind and when. Example: 'remind me to call mom in 2 hours' or 'set reminder for meeting tomorrow at 2pm'"
     def _process_with_gemini(self, text: str) -> str:
         try:
             if not self._tools and self.plugin_registry:
@@ -132,8 +220,12 @@ class AICore:
             return self._fallback_response(text)
     
     def _build_message_list(self, current_text: str) -> List[Dict[str, Any]]:
+        from config.settings import Settings
+        
         messages = []
-        messages.append({"role": "system", "content": self.system_prompt})
+        # Get FRESH system prompt with current time EVERY TIME
+        fresh_system_prompt = Settings.get_system_prompt()
+        messages.append({"role": "system", "content": fresh_system_prompt})
         
         for entry in self.conversation_history[-self.max_history_length:]:
             if isinstance(entry, dict):
@@ -168,20 +260,17 @@ class AICore:
     
     def _get_final_response(self, messages: List[Dict[str, Any]]) -> str:
         second_response = self.client.chat.completions.create(
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             messages=messages
         )
         return second_response.choices[0].message.content
     
     def _update_history(self, user_message: str, assistant_response: str):
-        if len(self.conversation_history) > 0 and self.conversation_history[-1].get("content") == user_message:
-            self.conversation_history[-1]["response"] = assistant_response
-        else:
-            self.conversation_history.append({
-                "role": "assistant",
-                "content": assistant_response,
-                "timestamp": datetime.now().isoformat()
-            })
+        self.conversation_history.append({
+            "role": "assistant",
+            "content": assistant_response,
+            "timestamp": datetime.now().isoformat()
+        })
         
         if len(self.conversation_history) > self.max_history_length * 2:
             self.conversation_history = self.conversation_history[-(self.max_history_length * 2):]
@@ -198,9 +287,16 @@ class AICore:
                 "description": metadata["description"],
                 "parameters": metadata["parameters"]
             })
+        
+        print(f"Loaded {len(self._tools)} tools for AI")
     
     def _fallback_response(self, text: str) -> str:
         from assistant.local_ai import LocalAI
+        
+        reminder_response = self._process_reminder_directly(text)
+        if reminder_response:
+            return reminder_response
+        
         local_ai = LocalAI()
         return local_ai.process(text)
     

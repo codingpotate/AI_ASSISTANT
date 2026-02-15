@@ -14,12 +14,10 @@ class Database:
         self._init_db()
     
     def _init_db(self):
-        """Initialize database tables."""
         with self._lock:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            # Create conversations table
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS conversations (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -32,11 +30,9 @@ class Database:
                 )
             ''')
             
-            # Create indexes for faster queries
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_session_id ON conversations(session_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_created_at ON conversations(created_at)')
             
-            # Create user settings table
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS user_settings (
                     user_id TEXT PRIMARY KEY DEFAULT 'default',
@@ -49,7 +45,6 @@ class Database:
                 )
             ''')
             
-            # Create plugin usage statistics table
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS plugin_stats (
                     plugin_name TEXT NOT NULL,
@@ -60,7 +55,6 @@ class Database:
                 )
             ''')
             
-            # Create reminders table
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS reminders (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,7 +71,6 @@ class Database:
     
     def save_conversation(self, session_id: str, role: str, content: str, 
                          plugin_used: Optional[str] = None, tokens_used: int = 0):
-        """Save a conversation turn to the database."""
         with self._lock:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
@@ -91,7 +84,6 @@ class Database:
             conn.close()
     
     def get_conversation_history(self, session_id: str, limit: int = 50) -> List[Dict[str, Any]]:
-        """Get conversation history for a session."""
         with self._lock:
             conn = sqlite3.connect(self.db_path)
             conn.row_factory = sqlite3.Row
@@ -108,12 +100,10 @@ class Database:
             rows = cursor.fetchall()
             conn.close()
             
-            # Convert to list of dicts and reverse to chronological order
             history = [dict(row) for row in rows]
             return list(reversed(history))
     
     def get_recent_sessions(self, limit: int = 10) -> List[Dict[str, Any]]:
-        """Get list of recent sessions."""
         with self._lock:
             conn = sqlite3.connect(self.db_path)
             conn.row_factory = sqlite3.Row
@@ -136,7 +126,6 @@ class Database:
             return [dict(row) for row in rows]
     
     def update_plugin_stats(self, plugin_name: str, session_id: str):
-        """Update plugin usage statistics."""
         with self._lock:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
@@ -153,7 +142,6 @@ class Database:
             conn.close()
     
     def get_plugin_stats(self) -> Dict[str, Any]:
-        """Get overall plugin usage statistics."""
         with self._lock:
             conn = sqlite3.connect(self.db_path)
             conn.row_factory = sqlite3.Row
@@ -182,32 +170,34 @@ class Database:
             return stats
     
     def save_reminder(self, session_id: str, reminder_text: str, due_time: datetime):
-        """Save a reminder to the database."""
         with self._lock:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
+            # Store in SQLite-compatible format (space instead of 'T', no microseconds)
+            due_time_str = due_time.strftime('%Y-%m-%d %H:%M:%S')
+            
             cursor.execute('''
                 INSERT INTO reminders (session_id, reminder_text, due_time)
                 VALUES (?, ?, ?)
-            ''', (session_id, reminder_text, due_time.isoformat()))
+            ''', (session_id, reminder_text, due_time_str))
             
             conn.commit()
             conn.close()
     
     def get_due_reminders(self, session_id: str) -> List[Dict[str, Any]]:
-        """Get reminders that are due for a session."""
         with self._lock:
             conn = sqlite3.connect(self.db_path)
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
+            # Use datetime() function on due_time to ensure consistent comparison
             cursor.execute('''
                 SELECT id, reminder_text, due_time
                 FROM reminders
                 WHERE session_id = ? 
                   AND completed = 0 
-                  AND due_time <= CURRENT_TIMESTAMP
+                  AND datetime(due_time) <= datetime('now', 'localtime')
                 ORDER BY due_time ASC
             ''', (session_id,))
             
@@ -216,7 +206,6 @@ class Database:
             return [dict(row) for row in rows]
     
     def mark_reminder_completed(self, reminder_id: int):
-        """Mark a reminder as completed."""
         with self._lock:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
@@ -231,7 +220,6 @@ class Database:
             conn.close()
     
     def get_user_settings(self, user_id: str = "default") -> Dict[str, Any]:
-        """Get user settings."""
         with self._lock:
             conn = sqlite3.connect(self.db_path)
             conn.row_factory = sqlite3.Row
@@ -248,7 +236,6 @@ class Database:
             if row:
                 return dict(row)
             else:
-                # Return default settings
                 return {
                     "user_id": user_id,
                     "default_city": "London",
@@ -258,12 +245,10 @@ class Database:
                 }
     
     def update_user_settings(self, user_id: str, settings: Dict[str, Any]):
-        """Update user settings."""
         with self._lock:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            # Get existing settings to update only provided fields
             existing = self.get_user_settings(user_id)
             updated_settings = {**existing, **settings}
             
@@ -283,7 +268,6 @@ class Database:
             conn.close()
     
     def cleanup_old_conversations(self, days_to_keep: int = 30):
-        """Clean up old conversations to save space."""
         with self._lock:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
@@ -296,8 +280,43 @@ class Database:
             deleted_count = cursor.rowcount
             conn.commit()
             
-            # Vacuum to reclaim space
             cursor.execute('VACUUM')
             conn.close()
             
             return deleted_count
+    
+    def get_pending_reminders(self, session_id: str) -> List[Dict[str, Any]]:
+        with self._lock:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT id, reminder_text, due_time, created_at
+                FROM reminders
+                WHERE session_id = ? 
+                AND completed = 0 
+                AND datetime(due_time) > datetime('now', 'localtime')
+                ORDER BY due_time ASC
+            ''', (session_id,))
+            
+            rows = cursor.fetchall()
+            conn.close()
+            return [dict(row) for row in rows]
+
+    def get_all_reminders(self, session_id: str) -> List[Dict[str, Any]]:
+        with self._lock:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT id, reminder_text, due_time, completed, created_at
+                FROM reminders
+                WHERE session_id = ?
+                ORDER BY due_time ASC
+            ''', (session_id,))
+            
+            rows = cursor.fetchall()
+            conn.close()
+            return [dict(row) for row in rows]

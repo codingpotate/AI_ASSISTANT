@@ -31,9 +31,7 @@ class Settings:
     - Subsequent interactions: Build on established context
     - If user gives information (like a name): Acknowledge naturally once, then use it appropriately
 
-    CURRENT CONTEXT:
-    - Current time: {current_time}
-    - Location: {user_location}
+    You have access to tools that can provide current time, weather, news, and other information.
     """
     
     @classmethod
