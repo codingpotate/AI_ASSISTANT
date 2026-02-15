@@ -2,7 +2,8 @@ import json
 import os
 import hashlib
 import getpass
-from datetime import datetime
+import re
+from datetime import datetime, timedelta
 from typing import Dict, Any, List
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -18,7 +19,7 @@ class AICore:
         else:
             username = getpass.getuser()
             self.session_id = f"user_{hashlib.md5(username.encode()).hexdigest()[:8]}"
-        
+
         self.conversation_history = []
         self.system_prompt = Settings.get_system_prompt()
         self._tools = []
@@ -26,9 +27,9 @@ class AICore:
         self.plugin_registry = plugin_registry
         self.database = Database()
         self.skills = skills
-        
+
         load_dotenv()
-        
+
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key or api_key == "your_gemini_api_key_here":
             self.use_gemini = False
@@ -39,31 +40,29 @@ class AICore:
                 base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
             )
             self.use_gemini = True
-        
+
         self._load_history_from_db()
-    
+
     def _load_history_from_db(self):
         db_history = self.database.get_conversation_history(self.session_id, limit=self.max_history_length)
-        
         for entry in db_history:
             self.conversation_history.append({
                 "role": entry["role"],
                 "content": entry["content"],
                 "timestamp": entry["created_at"]
             })
-        
         if db_history:
             print(f"Loaded {len(db_history)} previous messages for session: {self.session_id}")
-    
+
     def process_command(self, text: str) -> str:
         self.database.save_conversation(
             session_id=self.session_id,
             role="user",
             content=text
         )
-        
         self.conversation_history.append({"role": "user", "content": text})
-        
+
+        # Direct handling for reminders
         reminder_response = self._process_reminder_directly(text)
         if reminder_response:
             self.database.save_conversation(
@@ -74,13 +73,69 @@ class AICore:
             )
             self._update_history(text, reminder_response)
             return reminder_response
-        
+
+        # Direct handling for file organization
+        text_lower = text.lower()
+        if 'organize files' in text_lower or 'organize folder' in text_lower:
+            match = re.search(r'organize (?:files|folder)(?:\s+in)?\s+(.+)', text_lower)
+            if match:
+                directory = match.group(1).strip()
+                plugin = self.plugin_registry.get_plugin('organize_files')
+                if plugin:
+                    try:
+                        response = plugin.execute(directory=directory)
+                        self.database.save_conversation(
+                            session_id=self.session_id,
+                            role="assistant",
+                            content=response,
+                            plugin_used="organize_files"
+                        )
+                        self._update_history(text, response)
+                        return response
+                    except Exception as e:
+                        error_msg = f"Error organizing files: {str(e)}"
+                        self.database.save_conversation(
+                            session_id=self.session_id,
+                            role="assistant",
+                            content=error_msg,
+                            plugin_used="error"
+                        )
+                        self._update_history(text, error_msg)
+                        return error_msg
+
+        # Direct handling for calculations
+        calc_keywords = ['calculate', 'what is', '=', 'multiplied', 'divided', 'plus', 'minus']
+        if any(keyword in text_lower for keyword in calc_keywords) or re.search(r'\d+\s*[\+\-\*\/]\s*\d+', text_lower):
+            expr = re.sub(r'(calculate|what is|equals?|=)', '', text_lower).strip()
+            plugin = self.plugin_registry.get_plugin('calculate')
+            if plugin:
+                try:
+                    response = plugin.execute(expression=expr)
+                    self.database.save_conversation(
+                        session_id=self.session_id,
+                        role="assistant",
+                        content=response,
+                        plugin_used="calculate"
+                    )
+                    self._update_history(text, response)
+                    return response
+                except Exception as e:
+                    error_msg = f"Error calculating: {str(e)}"
+                    self.database.save_conversation(
+                        session_id=self.session_id,
+                        role="assistant",
+                        content=error_msg,
+                        plugin_used="error"
+                    )
+                    self._update_history(text, error_msg)
+                    return error_msg
+
+        # Try Gemini if available
         try:
             if self.use_gemini and self.client:
                 return self._process_with_gemini(text)
             else:
                 return self._fallback_response(text)
-                
         except Exception as e:
             error_msg = f"I encountered an error: {str(e)}"
             self.database.save_conversation(
@@ -91,83 +146,55 @@ class AICore:
             )
             self._update_history(text, error_msg)
             return error_msg
-    
-
     def _process_reminder_directly(self, text: str):
         text_lower = text.lower()
-        
         reminder_keywords = ['remind', 'reminder', 'alarm', 'notify', 'remember']
-        check_keywords = ['check', 'what', 'show', 'list', 'get']
-        set_keywords = ['set', 'create', 'add', 'make']
-        
-        has_reminder_word = any(word in text_lower for word in reminder_keywords)
-        
-        if not has_reminder_word:
+        if not any(word in text_lower for word in reminder_keywords):
             return None
-        
         if not self.skills:
-            return "Reminder system not available. Skills module not loaded."
-        
-        has_check_word = any(word in text_lower for word in check_keywords)
-        
-        if has_check_word:
-            return self.skills.check_reminders()
-        
-        # Parse reminder text and time
-        import re
-        
-        # Clean common patterns
-        cleaned_text = text_lower
-        
-        # Remove common prefixes
-        prefixes = ['remind me to', 'set reminder for', 'create reminder for', 
-                    'remind me', 'set reminder', 'create reminder', 'add reminder']
-        
-        for prefix in prefixes:
-            if cleaned_text.startswith(prefix):
-                cleaned_text = cleaned_text[len(prefix):].strip()
-                break
-        
-        if cleaned_text.startswith('to '):
-            cleaned_text = cleaned_text[3:].strip()
-        
+            return "Reminder system not available."
 
-        time_patterns = [
-            r'(?:in|at|on|for)\s+(.+)',  # "in 2 hours", "at 4pm", "on monday"
-            r'(.+?)\s+(?:in|at|on|for)\s+(.+)',  # "call mom in 2 hours"
+        patterns = [
+            # task first, then time
+            (r'remind\s+me\s+to\s+(.+?)\s+(?:at|on|in)\s+(.+)', 1, 2),
+            (r'set\s+(?:a\s+)?reminder\s+for\s+(.+?)\s+(?:at|on|in)\s+(.+)', 1, 2),
+            (r'remind\s+me\s+(.+?)\s+(?:at|on|in)\s+(.+)', 1, 2),
+            (r'reminder\s+(.+?)\s+(?:at|on|in)\s+(.+)', 1, 2),
+            # time first, then task
+            (r'(?:at|on|in)\s+(.+?)\s+remind\s+me\s+to\s+(.+)', 2, 1),
+            (r'(?:at|on|in)\s+(.+?)\s+set\s+(?:a\s+)?reminder\s+for\s+(.+)', 2, 1),
+            (r'remind\s+me\s+(?:at|on|in)\s+(.+?)\s+to\s+(.+)', 2, 1),
+            (r'remind\s+(?:at|on|in)\s+(.+?)\s+to\s+(.+)', 2, 1),
+            (r'set\s+(?:a\s+)?reminder\s+(?:at|on|in)\s+(.+?)\s+for\s+(.+)', 2, 1),
+            (r'(?:at|on|in)\s+(.+?)\s+(?:remind\s+me|reminder)\s+(.+)', 2, 1),
+            # very generic last resort
+            (r'(.+?)\s+(?:at|on|in)\s+(.+)', 1, 2),
         ]
-        
-        reminder_text = ""
-        when = ""
-        
-        for pattern in time_patterns:
-            match = re.search(pattern, cleaned_text)
+
+        for pattern, task_idx, time_idx in patterns:
+            match = re.search(pattern, text_lower)
             if match:
-                if len(match.groups()) == 1:
-                    when = match.group(1).strip()
-                    time_expr = match.group(0)
-                    reminder_text = cleaned_text.replace(time_expr, '').strip()
-                else:
-                    reminder_text = match.group(1).strip()
-                    when = match.group(2).strip()
-                break
-        
-        if not when:
-            duration_pattern = r'(\d+\s+(?:minutes?|hours?|days?|weeks?))'
-            match = re.search(duration_pattern, cleaned_text)
-            if match:
-                when = match.group(0).strip()
-                reminder_text = cleaned_text.replace(when, '').strip()
-        
-        if reminder_text:
-            reminder_text = re.sub(r'\s+(?:to|for)$', '', reminder_text)
-        
-        if reminder_text and when:
-            if re.match(r'\d+\s+(?:minutes?|hours?|days?|weeks?)', when) and not when.startswith('in '):
-                when = 'in ' + when
-            
-            return self.skills.set_reminder(reminder_text, when)
-        
+                groups = match.groups()
+                task = groups[task_idx-1].strip()
+                when = groups[time_idx-1].strip()
+                # Clean up task: remove leading 'to', 'a', 'the', 'my'
+                task = re.sub(r'^(?:to|a|the|my)\s+', '', task)
+                # If task is just 'remind' or 'reminder', skip this pattern
+                if task in ['remind', 'reminder']:
+                    continue
+                return self.skills.set_reminder(task, when)
+
+        # Fallback: extract any time expression
+        time_pattern = r'(?:at|on|in)\s+(\d+\s*(?:minutes?|hours?|days?|weeks?|am|pm)|tomorrow|next\s+\w+|\d{1,2}(?::\d{2})?\s*(?:am|pm)?)'
+        time_match = re.search(time_pattern, text_lower)
+        if time_match:
+            time_expr = time_match.group(0).strip()
+            task = text_lower.replace(time_expr, '').strip()
+            task = re.sub(r'^(remind\s+me|set\s+(?:a\s+)?reminder|reminder)\s+', '', task)
+            task = re.sub(r'\s+to$', '', task)
+            if task and task not in ['remind', 'reminder']:
+                return self.skills.set_reminder(task, time_expr)
+
         return "Please specify what to remind and when. Example: 'remind me to call mom in 2 hours' or 'set reminder for meeting tomorrow at 2pm'"
     def _process_with_gemini(self, text: str) -> str:
         try:
@@ -223,7 +250,6 @@ class AICore:
         from config.settings import Settings
         
         messages = []
-        # Get FRESH system prompt with current time EVERY TIME
         fresh_system_prompt = Settings.get_system_prompt()
         messages.append({"role": "system", "content": fresh_system_prompt})
         
@@ -291,35 +317,41 @@ class AICore:
         print(f"Loaded {len(self._tools)} tools for AI")
     
     def _fallback_response(self, text: str) -> str:
+        text_lower = text.lower()
+
+        if any(word in text_lower for word in ['time', 'clock']):
+            return self.skills.get_time_date()
+        if 'date' in text_lower:
+            return self.skills.get_time_date()
+
+        if 'weather' in text_lower:
+            city = None
+            city_match = re.search(r'weather\s+(?:in\s+)?([a-zA-Z\s]+)', text_lower)
+            if city_match:
+                city = city_match.group(1).strip()
+            return self.skills.get_weather(city)
+
+        if 'news' in text_lower:
+            category = 'general'
+            category_match = re.search(r'news\s+(?:about\s+)?([a-zA-Z]+)', text_lower)
+            if category_match:
+                cat = category_match.group(1).strip().lower()
+                valid = ['technology', 'business', 'sports', 'entertainment', 'health', 'science']
+                if cat in valid:
+                    category = cat
+            return self.skills.get_news(category)
+
+        if any(word in text_lower for word in ['calendar', 'events', 'schedule']):
+            return self.skills.get_calendar_events()
+
+        if any(word in text_lower for word in ['calculate', 'what is', '=']):
+            expr = re.sub(r'(calculate|what is|equals?|=)', '', text_lower).strip()
+            if expr:
+                return self.skills.calculate(expr)
+
         from assistant.local_ai import LocalAI
-        
-        reminder_response = self._process_reminder_directly(text)
-        if reminder_response:
-            return reminder_response
-        
-        local_ai = LocalAI()
-        return local_ai.process(text)
-    
-    def get_available_skills(self) -> List[str]:
-        if self.plugin_registry:
-            return [plugin.get_name() for plugin in self.plugin_registry.get_all_plugins()]
-        return []
-    
-    def get_session_stats(self) -> Dict[str, Any]:
-        history = self.database.get_conversation_history(self.session_id)
-        
-        user_messages = [msg for msg in history if msg["role"] == "user"]
-        assistant_messages = [msg for msg in history if msg["role"] == "assistant"]
-        
-        return {
-            "session_id": self.session_id,
-            "total_messages": len(history),
-            "user_messages": len(user_messages),
-            "assistant_messages": len(assistant_messages),
-            "plugins_used": len([msg for msg in history if msg.get("plugin_used")]),
-            "start_time": history[0]["created_at"] if history else None,
-            "end_time": history[-1]["created_at"] if history else None
-        }
+        local = LocalAI()
+        return local.process(text)
     
     def clear_history(self):
         self.conversation_history = []

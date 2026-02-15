@@ -11,6 +11,7 @@ class Database:
     def __init__(self, db_path: str = "assistant.db"):
         self.db_path = db_path
         self._lock = threading.Lock()
+        self._init_notes_table()
         self._init_db()
     
     def _init_db(self):
@@ -68,7 +69,22 @@ class Database:
             
             conn.commit()
             conn.close()
-    
+    def _init_notes_table(self):
+        with self._lock:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS notes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT NOT NULL,
+                    title TEXT,
+                    content TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            conn.commit()
+            conn.close()    
     def save_conversation(self, session_id: str, role: str, content: str, 
                          plugin_used: Optional[str] = None, tokens_used: int = 0):
         with self._lock:
@@ -320,3 +336,70 @@ class Database:
             rows = cursor.fetchall()
             conn.close()
             return [dict(row) for row in rows]
+    def init_notes_table(self):
+        with self._lock:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS notes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT NOT NULL,
+                    title TEXT,
+                    content TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            conn.commit()
+            conn.close()
+
+    def save_note(self, session_id: str, content: str, title: str = None):
+        with self._lock:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO notes (session_id, title, content)
+                VALUES (?, ?, ?)
+            ''', (session_id, title, content))
+            note_id = cursor.lastrowid
+            conn.commit()
+            conn.close()
+            return note_id
+
+    def get_notes(self, session_id: str, limit: int = 10):
+        with self._lock:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, title, content, created_at FROM notes
+                WHERE session_id = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+            ''', (session_id, limit))
+            rows = cursor.fetchall()
+            conn.close()
+            return [dict(row) for row in rows]
+
+    def get_note(self, note_id: int):
+        with self._lock:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, title, content, created_at FROM notes
+                WHERE id = ?
+            ''', (note_id,))
+            row = cursor.fetchone()
+            conn.close()
+            return dict(row) if row else None
+
+    def delete_note(self, note_id: int):
+        with self._lock:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM notes WHERE id = ?', (note_id,))
+            deleted = cursor.rowcount > 0
+            conn.commit()
+            conn.close()
+            return deleted

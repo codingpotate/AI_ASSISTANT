@@ -1,5 +1,8 @@
+import random
+import re
+from datetime import datetime
+
 class LocalAI:
-    
     def __init__(self):
         self.responses = {
             "greeting": [
@@ -28,30 +31,30 @@ class LocalAI:
                 "For now, I can help with basic tasks. Try asking something like 'What can you do?'"
             ]
         }
-    
+
     def process(self, text: str) -> str:
         text_lower = text.lower()
-        
+
         if any(word in text_lower for word in ['hello', 'hi', 'hey', 'greetings']):
             return random.choice(self.responses["greeting"])
-        
+
         if any(word in text_lower for word in ['bye', 'goodbye', 'exit', 'quit', 'see you']):
             return random.choice(self.responses["farewell"])
-        
+
         if any(word in text_lower for word in ['help', 'what can you do', 'capabilities']):
             return random.choice(self.responses["help"])
-        
+
         if any(word in text_lower for word in ['thanks', 'thank you', 'appreciate']):
             return random.choice(self.responses["thanks"])
-        
+
         if 'time' in text_lower and 'date' not in text_lower:
             now = datetime.now()
             return f"The current time is {now.strftime('%I:%M %p')}."
-        
+
         if 'date' in text_lower:
             now = datetime.now()
             return f"Today is {now.strftime('%A, %B %d, %Y')}."
-        
+
         if 'weather' in text_lower:
             city_match = re.search(r'weather\s+(?:in\s+)?([a-zA-Z\s]+)', text_lower)
             city = city_match.group(1).strip() if city_match else None
@@ -73,8 +76,5 @@ class LocalAI:
                 "I'm doing well, ready to assist you!",
                 "All systems operational! How can I help you today?"
             ])
-        
-        if 'remind' in text_lower or 'reminder' in text_lower:
-            return "Reminder system should be handled by the main AI core. Try saying it again."
-        
+
         return random.choice(self.responses["unknown"])
