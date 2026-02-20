@@ -1,0 +1,400 @@
+{
+  "info": {
+    "name": "AI Assistant API Tests",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Process Command - Time",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Has time indicator', () => {",
+              "    const resp = pm.response.json().response.toLowerCase();",
+              "    pm.expect(resp.includes('am') || resp.includes('pm') || resp.includes(':')).to.be.true;",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"command\": \"What time is it?\",\n  \"session_id\": \"test_001\"\n}"
+        },
+        "url": "http://localhost:5000/api/command"
+      }
+    },
+    {
+      "name": "Process Command - Weather",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Contains city name', () => {",
+              "    pm.expect(pm.response.json().response).to.include('London');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"command\": \"Weather in London\",\n  \"session_id\": \"test_001\"\n}"
+        },
+        "url": "http://localhost:5000/api/command"
+      }
+    },
+    {
+      "name": "Process Command - Reminder (in X minutes)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Reminder set', () => {",
+              "    pm.expect(pm.response.json().response).to.include('Reminder set');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"command\": \"Remind me to call mom in 10 minutes\",\n  \"session_id\": \"test_001\"\n}"
+        },
+        "url": "http://localhost:5000/api/command"
+      }
+    },
+    {
+      "name": "Process Command - Reminder (alternative format)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Reminder set', () => {",
+              "    pm.expect(pm.response.json().response).to.include('Reminder set');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"command\": \"set reminder for meeting tomorrow at 2pm\",\n  \"session_id\": \"test_001\"\n}"
+        },
+        "url": "http://localhost:5000/api/command"
+      }
+    },
+    {
+      "name": "Process Command - News",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Contains headlines', () => {",
+              "    pm.expect(pm.response.json().response.toLowerCase()).to.include('news');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"command\": \"technology news\",\n  \"session_id\": \"test_001\"\n}"
+        },
+        "url": "http://localhost:5000/api/command"
+      }
+    },
+    {
+      "name": "Process Command - Calculator",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Result correct', () => {",
+              "    pm.expect(pm.response.json().response).to.include('15 * 27 = 405');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"command\": \"Calculate 15 * 27\",\n  \"session_id\": \"test_001\"\n}"
+        },
+        "url": "http://localhost:5000/api/command"
+      }
+    },
+    {
+      "name": "Process Command - Save Note",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Note saved', () => {",
+              "    pm.expect(pm.response.json().response.toLowerCase()).to.include('note saved');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"command\": \"save note Buy milk\",\n  \"session_id\": \"test_001\"\n}"
+        },
+        "url": "http://localhost:5000/api/command"
+      }
+    },
+    {
+      "name": "Get Conversation History",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Is array', () => {",
+              "    pm.expect(pm.response.json()).to.be.an('array');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "http://localhost:5000/api/history/test_001"
+      }
+    },
+    {
+      "name": "List Plugins",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Contains at least 10 plugins', () => {",
+              "    pm.expect(pm.response.json().length).to.be.at.least(10);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "http://localhost:5000/api/plugins"
+      }
+    },
+    {
+      "name": "System Info",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Has system info', () => {",
+              "    pm.expect(pm.response.json().response).to.include('System');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"command\": \"system info\",\n  \"session_id\": \"test_001\"\n}"
+        },
+        "url": "http://localhost:5000/api/command"
+      }
+    },
+    {
+      "name": "File Organizer",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Organization attempted', () => {",
+              "    const resp = pm.response.json().response.toLowerCase();",
+              "    pm.expect(resp.includes('organized') || resp.includes('no files found')).to.be.true;",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"command\": \"organize files in C:\\\\Users\\\\kultu\\\\Desktop\\\\masaüstü\",\n  \"session_id\": \"test_001\"\n}"
+        },
+        "url": "http://localhost:5000/api/command"
+      }
+    },
+    {
+      "name": "Web Search",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Search results', () => {",
+              "    pm.expect(pm.response.json().response).to.not.be.empty;",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"command\": \"search for Python programming\",\n  \"session_id\": \"test_001\"\n}"
+        },
+        "url": "http://localhost:5000/api/command"
+      }
+    },
+    {
+      "name": "Invalid Command - Error Handling",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 400', () => pm.response.to.have.status(400));",
+              "pm.test('Error message', () => {",
+              "    pm.expect(pm.response.json()).to.have.property('error');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"invalid\": \"request\"\n}"
+        },
+        "url": "http://localhost:5000/api/command"
+      }
+    },
+    {
+      "name": "Health Check",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Healthy', () => {",
+              "    pm.expect(pm.response.json().status).to.equal('healthy');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "http://localhost:5000/api/health"
+      }
+    }
+  ]
+}
